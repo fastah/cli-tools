@@ -15,7 +15,7 @@ limitations under the License.
 */
 package main
 
-import "https://github.com/fastah/cli-tools/cmd"
+import "github.com/fastah/cli-tools/whereis/cmd"
 
 func main() {
 	cmd.Execute()
