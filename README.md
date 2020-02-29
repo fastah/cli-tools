@@ -5,7 +5,7 @@
 `howfastis` - a CLI tool for predicting network performance for a mobile visitor using just the IP address. Email Fastah at support@getfastah.com to speak to the authors.
 
 # TODO
-- Make a [`twurl`](https://github.com/twitter/twurl)-like command-line interface that supports: 
+- Make a [`Cobra`](https://github.com/spf13/cobra)-like command-line interface that supports: 
 * Helping a user sign-up for an API key and configuring the tool to use it
 * Sensible command-line arguments that showcase key data in the API response
 * Pipeing and general UNIXyness of CLI's input and output
