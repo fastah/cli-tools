@@ -16,24 +16,26 @@ limitations under the License.
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 // initCmd represents the init command
 var initCmd = &cobra.Command{
 	Use:   "init",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Prepares the tool for the further use by saving the specified Fastah API key in a local config file",
+	Long:  `Provide authentication information to the tool so that authorization credentials are stored in $HOME/.whereis.yaml`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("init called")
+		//fmt.Printf("init called with Fastah API key %v\n", cmd.Flag("fastah-api-key").Value)
+		saveAPIKeyToConfigFile(cmd.Flag("fastah-api-key").Value.String())
 	},
+}
+
+func saveAPIKeyToConfigFile(key string) {
+	_ = viper.AllSettings()
+	viper.SetDefault("fastah-api-key", key)
+	viper.Set("fastah-api-key", key)
+	viper.WriteConfig()
 }
 
 func init() {
@@ -43,8 +45,8 @@ func init() {
 
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
-	initCmd.PersistentFlags().String("fastah-key", "", "Fastah API Key from console.api.getfastah.com")
-
+	initCmd.PersistentFlags().String("fastah-api-key", "", "Fastah API Key from console.api.getfastah.com")
+	initCmd.MarkPersistentFlagRequired("fastah-api-key")
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
 	// initCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")

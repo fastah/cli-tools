@@ -30,16 +30,15 @@ var cfgFile string
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "whereis",
-	Short: "A brief description of your application",
-	Long: `A longer description that spans multiple lines and likely contains
-examples and usage of using your application. For example:
+	Short: "Finds approximate location, city, country or timezone for a specified IP address.",
+	Long: `Finds approximate location, city, country or timezone for a specified IP address. For example:
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+whereis 8.8.4.4`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
-	//	Run: func(cmd *cobra.Command, args []string) { },
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("In Root.go, Run command")
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -62,7 +61,7 @@ func init() {
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
 // initConfig reads in config file and ENV variables if set.
@@ -78,9 +77,10 @@ func initConfig() {
 			os.Exit(1)
 		}
 
-		// Search config in home directory with name ".whereis" (without extension).
+		// Search config in home directory with name ".whereis.yaml" (with extension).
 		viper.AddConfigPath(home)
-		viper.SetConfigName(".whereis")
+		viper.SetConfigName(".whereis.yaml")
+		viper.SetConfigType("yaml")
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
@@ -89,4 +89,6 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		fmt.Println("Using config file:", viper.ConfigFileUsed())
 	}
+	// Example below of how to read any other key already in the config file
+	// fmt.Printf("Value of key GREETING is %s\n", viper.GetString("greeting"))
 }
