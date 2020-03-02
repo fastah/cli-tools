@@ -150,7 +150,6 @@ func processFromStdin(fastahAPIkey string, comparedWithMMDB bool) {
 			resultRow[3] = *ipInfo.LocationData.CityName
 			resultRow[5] = fmt.Sprintf("%0.2f, %0.2f", *ipInfo.LocationData.Lat, *ipInfo.LocationData.Lng)
 			resultRow[7] = *ipInfo.LocationData.Tz
-			table.Append(resultRow)
 		} else {
 			body, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
