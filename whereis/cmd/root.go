@@ -92,14 +92,20 @@ func processFromStdin(ctx context.Context, fastahAPIkey string, compareMMDB bool
 		}
 		mmdbReader, err = geoip2.Open(home + "/GeoLite2-City.mmdb")
 		if err != nil {
-			panic(fmt.Sprintf("Problem opening MMDB database: err = %v", err))
+			compareMMDB = false
+			//fmt.Fprintf(os.Stderr, "Warning: disabling MMDB use (%v)\n", err)
 		}
 	}
 
 	// Pretty printing of output results
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"IP", "Country (F)", "Country (M)", "City (F)", "City (M)", "Lat/Lng (F)", "Lat/Lng (M)", "TZ (F)", "TZ (M)"})
-
+	tableHeader := []string{}
+	if compareMMDB {
+		tableHeader = []string{"IP", "Country (F)", "Country (M)", "City (F)", "City (M)", "Lat/Lng (F)", "Lat/Lng (M)", "TZ (F)", "TZ (M)"}
+	} else {
+		tableHeader = ([]string{"IP", "Country", "City", "Lat/Lng", "TZ"})
+	}
+	table.SetHeader(tableHeader)
 	// Read stdin, one IP per line
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
@@ -113,7 +119,7 @@ func processFromStdin(ctx context.Context, fastahAPIkey string, compareMMDB bool
 		}
 
 		// Prep result printing apparatus
-		resultRow := make([]string, 9, 9)
+		resultRow := make([]string, len(tableHeader), len(tableHeader))
 		resultRow[0] = ip.String()
 
 		if compareMMDB {
@@ -147,10 +153,14 @@ func processFromStdin(ctx context.Context, fastahAPIkey string, compareMMDB bool
 			if err != nil {
 				panic(fmt.Sprintf("Problem parsing Fastah API OK response (data model changed?): err = %v", err))
 			}
+			skipCount := 1
+			if compareMMDB {
+				skipCount = 2
+			}
 			resultRow[1] = *ipInfo.LocationData.CountryCode
-			resultRow[3] = *ipInfo.LocationData.CityName
-			resultRow[5] = fmt.Sprintf("%0.2f, %0.2f", *ipInfo.LocationData.Lat, *ipInfo.LocationData.Lng)
-			resultRow[7] = *ipInfo.LocationData.Tz
+			resultRow[1+1*skipCount] = *ipInfo.LocationData.CityName
+			resultRow[1+2*skipCount] = fmt.Sprintf("%0.2f, %0.2f", *ipInfo.LocationData.Lat, *ipInfo.LocationData.Lng)
+			resultRow[1+3*skipCount] = *ipInfo.LocationData.Tz
 		} else {
 			body, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
