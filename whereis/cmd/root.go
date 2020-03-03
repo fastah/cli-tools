@@ -17,11 +17,11 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -44,7 +44,7 @@ var rootCmd = &cobra.Command{
 	Short: "Finds approximate location, city, country or timezone for a specified IP address.",
 	Long: `Finds approximate location, city, country or timezone for a specified IP address. For example:
 
-whereis 8.8.4.4`,
+whereis --ip=202.94.72.116`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	Run: func(cmd *cobra.Command, args []string) {
@@ -54,23 +54,36 @@ whereis 8.8.4.4`,
 
 		if ipString == "-" {
 			apiKey := viper.GetString("fastah-api-key")
-			processFromStdin(apiKey, true)
+			processFromStdin(context.Background(), apiKey, true)
 		} else {
 			ip, err := cmd.Flags().GetString("ip")
 			if err != nil {
-				fmt.Printf("Expected a valid IP in the --ip argument ( %v )\n", err)
-				os.Exit(1)
+				panic(fmt.Sprintf("Expected a valid IP in the --ip argument ( %v )\n", err))
 			}
 			fmt.Printf("TODO: Implement single IP lookup for %s\n", ip)
 		}
 	},
 }
 
-func processFromStdin(fastahAPIkey string, comparedWithMMDB bool) {
+// processFromStdin processes multiple IP address read from os.Stdin, one line at a time.
+func processFromStdin(ctx context.Context, fastahAPIkey string, compareMMDB bool) {
 
+	// Set up high performance and secure HTTP/2 client configuration to communication with the Fastah API endpoint
+	// Turns on HTTP/2 via ForceAttemptHTTP2=true - ensures that responses come quickly on a multiplex connection, with no head-of-line blocking.
+	// Additionally, specifies minimum TLS version of 1.2, since it provides minimum-credible transport security.
+	tr := &http.Transport{
+		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
+		TLSHandshakeTimeout: time.Second * 5,
+		IdleConnTimeout:     0,
+		ForceAttemptHTTP2:   true,
+	}
+	// http2.ConfigureTransport(tr)
+	httpclient := &http.Client{Transport: tr}
+	fastahEndPointBase := "https://ep.api.getfastah.com/whereis/v1/json/"
+
+	// Only useful if we are comparing results with an MMDB database
 	var mmdbReader *geoip2.Reader
-
-	if comparedWithMMDB {
+	if compareMMDB {
 		// Find home directory to infer MMDB path
 		home, err := homedir.Dir()
 		if err != nil {
@@ -78,30 +91,17 @@ func processFromStdin(fastahAPIkey string, comparedWithMMDB bool) {
 			os.Exit(1)
 		}
 		mmdbReader, err = geoip2.Open(home + "/GeoLite2-City.mmdb")
-		if err != nil || mmdbReader == nil {
-			log.Fatal(err)
+		if err != nil {
+			panic(fmt.Sprintf("Problem opening MMDB database: err = %v", err))
 		}
 	}
 
-	// Secure TLS settings to minimize MITM mischief
-	tr := &http.Transport{
-		TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
-		MaxIdleConnsPerHost: http.DefaultMaxIdleConnsPerHost * 5,
-		TLSHandshakeTimeout: time.Second * 5,
-		IdleConnTimeout:     0,
-		ForceAttemptHTTP2:   true,
-	}
-	// http2.ConfigureTransport(tr)
-	httpclient := &http.Client{Transport: tr}
-
-	fastahEndPointBase := "https://ep.api.getfastah.com/whereis/v1/json/"
-
-	// Output formatting tool
+	// Pretty printing of output results
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"IP", "Country (F)", "Country (M)", "City (F)", "City (M)", "Lat/Lng (F)", "Lat/Lng (M)", "TZ (F)", "TZ (M)"})
 
+	// Read stdin, one IP per line
 	scanner := bufio.NewScanner(os.Stdin)
-
 	for scanner.Scan() {
 		ipRaw := strings.TrimSpace(scanner.Text())
 		if ipRaw == "" {
@@ -116,22 +116,23 @@ func processFromStdin(fastahAPIkey string, comparedWithMMDB bool) {
 		resultRow := make([]string, 9, 9)
 		resultRow[0] = ip.String()
 
-		mmdbRec, err := mmdbReader.City(ip)
-		if err != nil {
-			log.Fatal(err)
+		if compareMMDB {
+			mmdbRec, err := mmdbReader.City(ip)
+			if err != nil {
+				panic(fmt.Sprintf("Problem looking up IP (%s) in MMDB file: err = %v", ip.String(), err))
+			}
+			resultRow[2] = mmdbRec.Country.IsoCode
+			resultRow[4] = mmdbRec.City.Names["en"]
+			resultRow[6] = fmt.Sprintf("%0.2f, %0.2f", mmdbRec.Location.Latitude, mmdbRec.Location.Longitude)
+			resultRow[8] = mmdbRec.Location.TimeZone
 		}
 
-		resultRow[2] = mmdbRec.Country.IsoCode
-		resultRow[4] = mmdbRec.City.Names["en"]
-		resultRow[6] = fmt.Sprintf("%0.2f, %0.2f", mmdbRec.Location.Latitude, mmdbRec.Location.Longitude)
-		resultRow[8] = mmdbRec.Location.TimeZone
-
 		url := fastahEndPointBase + ip.String()
-		req, err := http.NewRequest("GET", url, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		req.Header.Set("Fastah-Key", fastahAPIkey)
 		resp, err := httpclient.Do(req)
 		if err != nil {
-			log.Panicln(err)
+			panic(fmt.Sprintf("Problem sending HTTP request to Fastah API: err = %v", err))
 		}
 		defer resp.Body.Close()
 
@@ -139,12 +140,12 @@ func processFromStdin(fastahAPIkey string, comparedWithMMDB bool) {
 		if resp.StatusCode == 200 {
 			body, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
-				log.Panicln(err)
+				panic(fmt.Sprintf("Problem reading Fastah API OK response: err = %v", err))
 			}
 			var ipInfo LocationResponse
 			err = json.Unmarshal(body, &ipInfo)
 			if err != nil {
-				fmt.Println("error:", err)
+				panic(fmt.Sprintf("Problem parsing Fastah API OK response (data model changed?): err = %v", err))
 			}
 			resultRow[1] = *ipInfo.LocationData.CountryCode
 			resultRow[3] = *ipInfo.LocationData.CityName
@@ -153,14 +154,14 @@ func processFromStdin(fastahAPIkey string, comparedWithMMDB bool) {
 		} else {
 			body, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
-				log.Panicln(err)
+				panic(fmt.Sprintf("Problem reading Fastah API response body: status code = %d, err = %v", resp.StatusCode, err))
 			}
 			var errorPayload ProblemResponseError
 			err = json.Unmarshal(body, &errorPayload)
 			if err != nil {
-				fmt.Printf("problem parsing error message body, status code = %d, err = %v", resp.StatusCode, err)
+				panic(fmt.Sprintf("Problem parsing Fastah API error (data model changed?): status code = %d, err = %v", resp.StatusCode, err))
 			} else {
-				fmt.Printf("Problem with Fastah API call; HTTP code %d ( %s )\n", resp.StatusCode, errorPayload.Message)
+				fmt.Fprintf(os.Stderr, "Problem with Fastah API call; HTTP code %d ( %s )\n", resp.StatusCode, errorPayload.Message)
 			}
 			resultRow[1], resultRow[3], resultRow[5], resultRow[7] = "💩", "💩", "💩", "💩"
 		}
@@ -168,10 +169,10 @@ func processFromStdin(fastahAPIkey string, comparedWithMMDB bool) {
 	}
 
 	if scanner.Err() != nil {
-		log.Panicln(scanner.Err())
+		panic(scanner.Err())
 	}
 
-	if comparedWithMMDB && mmdbReader != nil {
+	if compareMMDB && mmdbReader != nil {
 		mmdbReader.Close()
 	}
 
